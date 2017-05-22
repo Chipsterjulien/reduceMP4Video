@@ -2,6 +2,11 @@
 # notice is the default
 logtype = "notice"
 
+[default]
+mp4folderpath = ""
+# time to sleep in minute(s)
+sleeptime = 4
+
 [email]
 from = ""
 smtp = ""

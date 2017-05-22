@@ -8,6 +8,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"bitbucket.org/zombiezen/cardcpx/natsort"
 	"github.com/jordan-wright/email"
@@ -29,30 +30,41 @@ func main() {
 	fd := initLogging(&logFilename)
 	defer fd.Close()
 
-	breakFilesListPtr := getFilesList("InProgress/*")
+	if err := os.Chdir(viper.GetString("default.mp4folderpath")); err != nil {
+		log := logging.MustGetLogger("log")
 
-	filesListPtr := getFilesList("*.mp4")
-	if len(*filesListPtr) != 0 {
-		if len(*breakFilesListPtr) == 0 {
-			createSomeFolders()
-			splitMP4File(&(*filesListPtr)[0])
-		}
-		filesListToProcessePtr := getFilesList("InProgress/*.mkv")
-		for _, filename := range *filesListToProcessePtr {
-			transformToMKV(&filename)
-		}
-		sourceListPtr := getFilesList("InProgress/*.mp4")
-		if len(*sourceListPtr) != 1 {
-			// Souci en vu !
-			sendAnEmail("J'ai un gros souci pour convertir les mkv. Je n'ai pas la chose attendu dans le répertoire \"InProgress\" !")
-			os.Exit(1)
-		}
-		filesListToMergePtr := getFilesList("BeforeMerge/*.mkv")
-		mergeMKV(sourceListPtr, filesListToMergePtr)
+		log.Criticalf("Unable to chdir: %v", err)
+		sendAnEmail(fmt.Sprintf("Unable to change directory: %v", err))
 
-		for _, filename := range *sourceListPtr {
-			os.Remove(filename)
+		os.Exit(1)
+	}
+
+	for {
+		breakFilesListPtr := getFilesList("InProgress/*")
+		filesListPtr := getFilesList("*.mp4")
+		if len(*filesListPtr) != 0 {
+			if len(*breakFilesListPtr) == 0 {
+				createSomeFolders()
+				splitMP4File(&(*filesListPtr)[0])
+			}
+			filesListToProcessePtr := getFilesList("InProgress/*.mkv")
+			for _, filename := range *filesListToProcessePtr {
+				transformToMKV(&filename)
+			}
+			sourceListPtr := getFilesList("InProgress/*.mp4")
+			if len(*sourceListPtr) != 1 {
+				// Souci en vu !
+				sendAnEmail("J'ai un gros souci pour convertir les mkv. Je n'ai pas la chose attendu dans le répertoire \"InProgress\" !")
+				os.Exit(1)
+			}
+			filesListToMergePtr := getFilesList("BeforeMerge/*.mkv")
+			mergeMKV(sourceListPtr, filesListToMergePtr)
+
+			for _, filename := range *sourceListPtr {
+				os.Remove(filename)
+			}
 		}
+		time.Sleep(time.Duration(viper.GetInt("default.sleeptime")) * time.Minute)
 	}
 }
 

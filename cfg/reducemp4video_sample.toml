@@ -1,0 +1,11 @@
+# logtype can take: debug, info, notice, warning, error, critical
+# notice is the default
+logtype = "notice"
+
+[email]
+from = ""
+smtp = ""
+port = ""
+login = ""
+password = ""
+sendTo = [""]

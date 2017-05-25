@@ -3,9 +3,9 @@
 logtype = "notice"
 
 [default]
-mp4folderpath = ""
-# time to sleep in minute(s)
-sleeptime = 4
+mp4folderpath = "/tmp"
+# time to sleep in seconde(s)
+sleeptime = 30
 
 [email]
 from = ""

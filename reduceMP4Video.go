@@ -16,59 +16,165 @@ import (
 	"github.com/spf13/viper"
 )
 
+type myinfo struct {
+	filename string
+	size     int64
+}
+
 func main() {
 	confPath := "/etc/reducemp4video"
-	confFile := "reducemp4video"
+	confFilename := "reducemp4video"
 	logFilename := "/var/log/reducemp4video/error.log"
 
 	// confPath := "cfg/"
-	// confFile := "reducemp4video_sample.toml"
+	// confFilename := "reducemp4video_sample"
 	// logFilename := "error.log"
-
-	loadConfig(&confPath, &confFile)
 
 	fd := initLogging(&logFilename)
 	defer fd.Close()
+
+	loadConfig(&confPath, &confFilename)
 
 	if err := os.Chdir(viper.GetString("default.mp4folderpath")); err != nil {
 		log := logging.MustGetLogger("log")
 
 		log.Criticalf("Unable to chdir: %v", err)
-		sendAnEmail(fmt.Sprintf("Unable to change directory: %v", err))
+		sendAnEmail(fmt.Sprintf("Unable to change directory: %v", err), "")
 
 		os.Exit(1)
 	}
 
+	oldFilesList := []myinfo{}
+
 	for {
+		// obtention des fichiers qui sont dans InProgress. Cela veut dire que le programme s'est arrêté avant d'avoir tout fini
 		breakFilesListPtr := getFilesList("InProgress/*")
-		filesListPtr := getFilesList("*.mp4")
-		if len(*filesListPtr) != 0 {
-			if len(*breakFilesListPtr) == 0 {
-				createSomeFolders()
-				splitMP4File(&(*filesListPtr)[0])
+		if len(*breakFilesListPtr) != 0 && !isHaveMP4File(breakFilesListPtr) {
+			for _, filename := range *breakFilesListPtr {
+				os.Remove(filename)
 			}
+			continue
+		}
+		// Obtention des fichiers à traiter
+		filesListPtr := getFilesList("*.mp4")
+		// Si la liste des fichiers à traiter n'est pas vide
+		if len(*filesListPtr) != 0 || len(*breakFilesListPtr) != 0 {
+			// S'il n'y a pas de fichier dans le répertoire InProgress
+			if len(*breakFilesListPtr) == 0 {
+				// On vérifie que les fichiers ne changent pas de taille avant d'en choisir un à traiter
+				if isFilesSizeChanged(filesListPtr, &oldFilesList) {
+					time.Sleep(2 * time.Second)
+					continue
+				}
+
+				// Création des répertoires de travail s'ils n'existent pas déjà
+				createSomeFolders()
+				// Découpage du fichier sélectionné
+				splitMP4File(&(*filesListPtr)[0])
+				os.Remove((*filesListPtr)[0])
+			}
+			// obtention de la liste des fichiers coupés
 			filesListToProcessePtr := getFilesList("InProgress/*.mkv")
 			for _, filename := range *filesListToProcessePtr {
+				// Transformation de tous les fichiers contenus dans la liste
 				transformToMKV(&filename)
+				os.Remove(filename)
 			}
+			// Obtention du fichier vide pour remettre le bon nom
 			sourceListPtr := getFilesList("InProgress/*.mp4")
+			// Normalement il n'y a qu'un seul fichier autrement c'est qu'il y a un sacré problème
 			if len(*sourceListPtr) != 1 {
 				// Souci en vu !
-				sendAnEmail("J'ai un gros souci pour convertir les mkv. Je n'ai pas la chose attendu dans le répertoire \"InProgress\" !")
+				sendAnEmail("I've a big shit to convert mkv's files. I've something wrong in folder \"InProgress\" !", "")
 				os.Exit(1)
 			}
 			filesListToMergePtr := getFilesList("BeforeMerge/*.mkv")
+			// Fusion des fichiers mkv
 			mergeMKV(sourceListPtr, filesListToMergePtr)
+			// Supprime le fichier qui permet de se souvenir du nom de l'archive lors de la fusion
+			for _, filename := range *filesListToMergePtr {
+				os.Remove(filename)
+			}
 
+			// Suppression de tous les fichiers mkv qui ne servent plus
 			for _, filename := range *sourceListPtr {
 				os.Remove(filename)
 			}
+			sendAnEmail(fmt.Sprintf("I finish processing %s", (*filesListToMergePtr)[0]), "End of reduce mp4 file")
+			continue
 		}
-		time.Sleep(time.Duration(viper.GetInt("default.sleeptime")) * time.Minute)
+
+		time.Sleep(time.Duration(viper.GetInt("default.sleeptime")) * time.Second)
 	}
 }
 
+func isHaveMP4File(breakFilesListPtr *[]string) bool {
+	log := logging.MustGetLogger("log")
+
+	log.Debug("I search if I found an mp4 file in order to know if split is correct")
+	for _, filename := range *breakFilesListPtr {
+		ext := path.Ext(filename)
+		if ext == ".mp4" {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isFilesSizeChanged(filesListPtr *[]string, oldFilesListPtr *[]myinfo) bool {
+	log := logging.MustGetLogger("log")
+
+	log.Debug("I found new files and i see if their size, changed")
+
+	newFilesList := make([]myinfo, len(*filesListPtr))
+
+	// Get size of file for all files
+	for num, filename := range *filesListPtr {
+		file, err := os.Open(filename)
+		if err != nil {
+			log.Criticalf("Unable to open file: %v", err)
+			os.Exit(1)
+		}
+		defer file.Close()
+
+		fi, err := file.Stat()
+		if err != nil {
+			log.Critical("Unable to get file stat: %v", err)
+			os.Exit(1)
+		}
+
+		newFilesList[num] = myinfo{filename: filename, size: fi.Size()}
+	}
+
+	if len(*oldFilesListPtr) == 0 {
+		*oldFilesListPtr = newFilesList
+
+		return true
+	}
+
+	for _, file := range newFilesList {
+		for _, fi := range *oldFilesListPtr {
+			if file.filename == fi.filename {
+				if file.size != fi.size {
+					log.Debug("size are differents")
+					*oldFilesListPtr = newFilesList
+
+					return true
+				}
+				break
+			}
+		}
+	}
+
+	return false
+}
+
 func createSomeFolders() {
+	log := logging.MustGetLogger("log")
+
+	log.Debug("I build folder to work")
+
 	os.Mkdir("InProgress", 0744)
 	os.Mkdir("BeforeMerge", 0744)
 	os.Mkdir("Finished", 0744)
@@ -77,29 +183,70 @@ func createSomeFolders() {
 func getFilesList(glob string) *[]string {
 	log := logging.MustGetLogger("log")
 
+	log.Debug("I'm searching some files")
+
 	files, err := filepath.Glob(glob)
 	if err != nil {
 		log.Fatalf("Unable to get files list: %v", err)
-		sendAnEmail(fmt.Sprintf("Unable to get files list with glob function: %v", err))
+		sendAnEmail(fmt.Sprintf("Unable to get files list with glob function: %v", err), "")
 		os.Exit(1)
 	}
 
 	return &files
 }
 
+func findFilename(filesListPtr *[]string, filenameWithoutExt *string) *string {
+	log := logging.MustGetLogger("log")
+
+	tmpFilename := fmt.Sprintf("%s.%s", *filenameWithoutExt, "mkv")
+	if searchStringInList(filesListPtr, &tmpFilename) {
+		findNewName := false
+
+		for i := 0; i < 1000; i++ {
+			tmpFilename = fmt.Sprintf("%s-%d.%s", *filenameWithoutExt, i, "mkv")
+			if !searchStringInList(filesListPtr, &tmpFilename) {
+				findNewName = true
+				break
+			}
+		}
+		if !findNewName {
+			log.Criticalf("Unable to find a filename for %s.mkv !", *filenameWithoutExt)
+			os.Exit(0)
+		}
+	}
+
+	return &tmpFilename
+}
+
 func mergeMKV(filenameListPtr *[]string, filesListToMergePtr *[]string) {
+	log := logging.MustGetLogger("log")
+
+	log.Debug("I merge some files")
+
 	natsort.Strings(*filesListToMergePtr)
 	filename := strings.Replace((*filenameListPtr)[0], "InProgress", "Finished", -1)
 	ext := path.Ext(filename)
-	filename = fmt.Sprintf("%s.%s", filename[0:len(filename)-len(ext)], "mkv")
-	cmd := fmt.Sprintf("mkvmerge -o %s %s", filename, strings.Join((*filesListToMergePtr), " + "))
+	filename = filename[0 : len(filename)-len(ext)]
+
+	filesListPtr := getFilesList("Finished/*.mkv")
+	lastFilename := findFilename(filesListPtr, &filename)
+
+	cmd := fmt.Sprintf("mkvmerge -o %s %s", *lastFilename, strings.Join((*filesListToMergePtr), " + "))
 	exec.Command("/bin/sh", "-c", cmd).CombinedOutput()
-	for _, filename := range *filesListToMergePtr {
-		os.Remove(filename)
-	}
 }
 
-func sendAnEmail(message string) {
+// Search if filename already exist in file's list
+func searchStringInList(stringList *[]string, str *string) bool {
+	for _, val := range *stringList {
+		if *str == val {
+			return true
+		}
+	}
+
+	return false
+}
+
+func sendAnEmail(message string, subject string) {
 	log := logging.MustGetLogger("log")
 
 	host := viper.GetString("email.smtp")
@@ -112,7 +259,11 @@ func sendAnEmail(message string) {
 	e := email.NewEmail()
 	e.From = from
 	e.To = to
-	e.Subject = "Problème détecté lors de la convertion de mkv"
+	if subject == "" {
+		e.Subject = "Issue detected when I convert some .mkv"
+	} else {
+		e.Subject = subject
+	}
 	e.Text = []byte(message)
 	if err := e.Send(hostNPort, smtp.PlainAuth("", username, password, host)); err != nil {
 		log.Warningf("Unable to send an email to \"%s\": %v", strings.Join(to, " "), err)
@@ -122,15 +273,24 @@ func sendAnEmail(message string) {
 }
 
 func splitMP4File(filename *string) {
+	log := logging.MustGetLogger("log")
+
+	log.Debugf("Je découpe le fichier \"%s\"", *filename)
+
+	time.Sleep(time.Minute)
+
 	cmd := fmt.Sprintf("ffmpeg -i %s -acodec copy -f segment -segment_time 5 -vcodec copy -reset_timestamps 1 -map 0 InProgress/output%%d.mkv", *filename)
 	exec.Command("/bin/sh", "-c", cmd).CombinedOutput()
 	os.OpenFile(fmt.Sprintf("InProgress/%s", *filename), os.O_RDONLY|os.O_CREATE, 0666)
-	os.Remove(*filename)
 }
 
 func transformToMKV(filename *string) {
+	log := logging.MustGetLogger("log")
+
+	log.Debugf("Je compresse le fichier \"%s\"", *filename)
+
 	newFilename := strings.Replace(*filename, "InProgress/", "BeforeMerge/", -1)
-	cmd := fmt.Sprintf("ffmpeg -i %s -codec libx265 -crf 20 -preset veryslow -c:a copy %s", *filename, newFilename)
+	// cmd := fmt.Sprintf("ffmpeg -i %s -codec libx265 -crf 20 -preset veryslow -c:a copy %s", *filename, newFilename)
+	cmd := fmt.Sprintf("ffmpeg -i %s -c:v copy -c:a copy %s", *filename, newFilename)
 	exec.Command("/bin/sh", "-c", cmd).CombinedOutput()
-	os.Remove(*filename)
 }

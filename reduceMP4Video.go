@@ -28,13 +28,13 @@ const (
 )
 
 func main() {
-	// confPath := "/etc/reducemp4video"
-	// confFilename := "reducemp4video"
-	// logFilename := "/var/log/reducemp4video/error.log"
+	confPath := "/etc/reducemp4video"
+	confFilename := "reducemp4video"
+	logFilename := "/var/log/reducemp4video/error.log"
 
-	confPath := "cfg/"
-	confFilename := "reducemp4video_sample"
-	logFilename := "error.log"
+	// confPath := "cfg/"
+	// confFilename := "reducemp4video_sample"
+	// logFilename := "error.log"
 
 	fd := initLogging(&logFilename)
 	defer fd.Close()

@@ -4,8 +4,12 @@ logtype = "notice"
 
 [default]
 mp4folderpath = "/tmp"
-# time to sleep in seconde(s)
-sleeptime = 30
+# time to sleep in seconde(s) between search new file(s)
+sleeptime = 60
+# Time to sleep in seconde(s) in order to wait buffer is empty when you copy some mp4 files. If number is too lower, video can be corrupted
+sleeptimebuffer = 60
+# value of nice ffmpeg process
+nice = 19
 
 # See doc for more explanations:
 # - https://trac.ffmpeg.org/wiki/Encode/H.264

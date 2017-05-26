@@ -28,13 +28,13 @@ const (
 )
 
 func main() {
-	confPath := "/etc/reducemp4video"
-	confFilename := "reducemp4video"
-	logFilename := "/var/log/reducemp4video/error.log"
+	// confPath := "/etc/reducemp4video"
+	// confFilename := "reducemp4video"
+	// logFilename := "/var/log/reducemp4video/error.log"
 
-	// confPath := "cfg/"
-	// confFilename := "reducemp4video_sample"
-	// logFilename := "error.log"
+	confPath := "cfg/"
+	confFilename := "reducemp4video_sample"
+	logFilename := "error.log"
 
 	fd := initLogging(&logFilename)
 	defer fd.Close()
@@ -110,6 +110,7 @@ func main() {
 			for _, filename := range *sourceListPtr {
 				os.Remove(filename)
 			}
+
 			sendAnEmail(fmt.Sprintf("I finish processing %s", (*filesListToMergePtr)[0]), "End of reduce mp4 file")
 			continue
 		}
@@ -288,7 +289,7 @@ func splitMP4File(filename *string) {
 
 	log.Debugf("I'm waiting a minute (empty buffer) and i'll split %s file", *filename)
 
-	time.Sleep(time.Minute)
+	time.Sleep(time.Duration(viper.GetInt("default.sleeptimebuffer")) * time.Second)
 
 	log.Debugf("I splitting file \"%s\"", *filename)
 
@@ -308,9 +309,10 @@ func transformToMKV(filename *string) {
 	codec := viper.GetString("quality.codec")
 	crf := viper.GetInt("quality.crf")
 	preset := viper.GetString("quality.preset")
+	nice := viper.GetInt("default.nice")
 
 	newFilename := strings.Replace(*filename, inProgessDir, beforeMergeDir, -1)
-	cmd := fmt.Sprintf("ffmpeg -i %s -codec %s -crf %d -preset %s -c:a copy %s", *filename, codec, crf, preset, newFilename)
-	// cmd = fmt.Sprintf("ffmpeg -i %s -c:v copy -c:a copy %s", *filename, newFilename)
+	cmd := fmt.Sprintf("nice -n %d ffmpeg -i %s -codec %s -crf %d -preset %s -c:a copy %s", nice, *filename, codec, crf, preset, newFilename)
+	// cmd = fmt.Sprintf("nice -n %d ffmpeg -i %s -c:v copy -c:a copy %s", nice, *filename, newFilename)
 	exec.Command("/bin/sh", "-c", cmd).CombinedOutput()
 }

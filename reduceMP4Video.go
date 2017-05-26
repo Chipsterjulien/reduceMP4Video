@@ -21,6 +21,12 @@ type myinfo struct {
 	size     int64
 }
 
+const (
+	inProgessDir   = "InProgess/"
+	beforeMergeDir = "BeforeMerge/"
+	finishedDir    = "Finished/"
+)
+
 func main() {
 	confPath := "/etc/reducemp4video"
 	confFilename := "reducemp4video"
@@ -48,7 +54,8 @@ func main() {
 
 	for {
 		// obtention des fichiers qui sont dans InProgress. Cela veut dire que le programme s'est arrêté avant d'avoir tout fini
-		breakFilesListPtr := getFilesList("InProgress/*")
+		// breakFilesListPtr := getFilesList(fmt.Sprintf("%s/*", inProgessDir))
+		breakFilesListPtr := getFilesList(path.Join(inProgessDir, "*"))
 		if len(*breakFilesListPtr) != 0 && !isHaveMP4File(breakFilesListPtr) {
 			for _, filename := range *breakFilesListPtr {
 				os.Remove(filename)
@@ -74,29 +81,32 @@ func main() {
 				os.Remove((*filesListPtr)[0])
 			}
 			// obtention de la liste des fichiers coupés
-			filesListToProcessePtr := getFilesList("InProgress/*.mkv")
+			// filesListToProcessePtr := getFilesList(fmt.Sprintf("%s/*.mkv", inProgessDir))
+			filesListToProcessePtr := getFilesList(path.Join(inProgessDir, "*.mkv"))
 			for _, filename := range *filesListToProcessePtr {
 				// Transformation de tous les fichiers contenus dans la liste
 				transformToMKV(&filename)
 				os.Remove(filename)
 			}
 			// Obtention du fichier vide pour remettre le bon nom
-			sourceListPtr := getFilesList("InProgress/*.mp4")
+			// sourceListPtr := getFilesList("InProgress/*.mp4")
+			sourceListPtr := getFilesList(path.Join(inProgessDir, "*.mp4"))
 			// Normalement il n'y a qu'un seul fichier autrement c'est qu'il y a un sacré problème
 			if len(*sourceListPtr) != 1 {
 				// Souci en vu !
 				sendAnEmail("I've a big shit to convert mkv's files. I've something wrong in folder \"InProgress\" !", "")
 				os.Exit(1)
 			}
-			filesListToMergePtr := getFilesList("BeforeMerge/*.mkv")
+			// filesListToMergePtr := getFilesList("BeforeMerge/*.mkv")
+			filesListToMergePtr := getFilesList(path.Join(beforeMergeDir, "*.mkv"))
 			// Fusion des fichiers mkv
 			mergeMKV(sourceListPtr, filesListToMergePtr)
-			// Supprime le fichier qui permet de se souvenir du nom de l'archive lors de la fusion
+			// Remove filename which use to know latest filename after merge files
 			for _, filename := range *filesListToMergePtr {
 				os.Remove(filename)
 			}
 
-			// Suppression de tous les fichiers mkv qui ne servent plus
+			// Remove all mkv files
 			for _, filename := range *sourceListPtr {
 				os.Remove(filename)
 			}
@@ -125,7 +135,7 @@ func isHaveMP4File(breakFilesListPtr *[]string) bool {
 func isFilesSizeChanged(filesListPtr *[]string, oldFilesListPtr *[]myinfo) bool {
 	log := logging.MustGetLogger("log")
 
-	log.Debug("I found new files and i see if their size, changed")
+	log.Debug("I found new files and i see if their size has changed")
 
 	newFilesList := make([]myinfo, len(*filesListPtr))
 
@@ -175,9 +185,9 @@ func createSomeFolders() {
 
 	log.Debug("I build folder to work")
 
-	os.Mkdir("InProgress", 0744)
-	os.Mkdir("BeforeMerge", 0744)
-	os.Mkdir("Finished", 0744)
+	os.Mkdir(inProgessDir, 0744)
+	os.Mkdir(beforeMergeDir, 0744)
+	os.Mkdir(finishedDir, 0744)
 }
 
 func getFilesList(glob string) *[]string {
@@ -224,11 +234,12 @@ func mergeMKV(filenameListPtr *[]string, filesListToMergePtr *[]string) {
 	log.Debug("I merge some files")
 
 	natsort.Strings(*filesListToMergePtr)
-	filename := strings.Replace((*filenameListPtr)[0], "InProgress", "Finished", -1)
+	filename := strings.Replace((*filenameListPtr)[0], inProgessDir, finishedDir, -1)
 	ext := path.Ext(filename)
 	filename = filename[0 : len(filename)-len(ext)]
 
-	filesListPtr := getFilesList("Finished/*.mkv")
+	// filesListPtr := getFilesList("Finished/*.mkv")
+	filesListPtr := getFilesList(path.Join(finishedDir, "*.mkv"))
 	lastFilename := findFilename(filesListPtr, &filename)
 
 	cmd := fmt.Sprintf("mkvmerge -o %s %s", *lastFilename, strings.Join((*filesListToMergePtr), " + "))
@@ -275,22 +286,31 @@ func sendAnEmail(message string, subject string) {
 func splitMP4File(filename *string) {
 	log := logging.MustGetLogger("log")
 
-	log.Debugf("Je découpe le fichier \"%s\"", *filename)
+	log.Debugf("I'm waiting a minute (empty buffer) and i'll split %s file", *filename)
 
 	time.Sleep(time.Minute)
 
-	cmd := fmt.Sprintf("ffmpeg -i %s -acodec copy -f segment -segment_time 5 -vcodec copy -reset_timestamps 1 -map 0 InProgress/output%%d.mkv", *filename)
+	log.Debugf("I splitting file \"%s\"", *filename)
+
+	cutTime := viper.GetInt("split.cuttime")
+
+	cmd := fmt.Sprintf("ffmpeg -i %s -acodec copy -f segment -segment_time %d -vcodec copy -reset_timestamps 1 -map 0 %soutput%%d.mkv", *filename, cutTime, inProgessDir)
 	exec.Command("/bin/sh", "-c", cmd).CombinedOutput()
-	os.OpenFile(fmt.Sprintf("InProgress/%s", *filename), os.O_RDONLY|os.O_CREATE, 0666)
+	// os.OpenFile(fmt.Sprintf("InProgress/%s", *filename), os.O_RDONLY|os.O_CREATE, 0666)
+	os.OpenFile(path.Join(inProgessDir, *filename), os.O_RDONLY|os.O_CREATE, 0666)
 }
 
 func transformToMKV(filename *string) {
 	log := logging.MustGetLogger("log")
 
-	log.Debugf("Je compresse le fichier \"%s\"", *filename)
+	log.Debugf("Compressing file \"%s\"", *filename)
 
-	newFilename := strings.Replace(*filename, "InProgress/", "BeforeMerge/", -1)
-	// cmd := fmt.Sprintf("ffmpeg -i %s -codec libx265 -crf 20 -preset veryslow -c:a copy %s", *filename, newFilename)
-	cmd := fmt.Sprintf("ffmpeg -i %s -c:v copy -c:a copy %s", *filename, newFilename)
+	codec := viper.GetString("quality.codec")
+	crf := viper.GetInt("quality.crf")
+	preset := viper.GetString("quality.preset")
+
+	newFilename := strings.Replace(*filename, inProgessDir, beforeMergeDir, -1)
+	cmd := fmt.Sprintf("ffmpeg -i %s -codec %s -crf %d -preset %s -c:a copy %s", *filename, codec, crf, preset, newFilename)
+	// cmd = fmt.Sprintf("ffmpeg -i %s -c:v copy -c:a copy %s", *filename, newFilename)
 	exec.Command("/bin/sh", "-c", cmd).CombinedOutput()
 }

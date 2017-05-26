@@ -7,10 +7,27 @@ mp4folderpath = "/tmp"
 # time to sleep in seconde(s)
 sleeptime = 30
 
+# See doc for more explanations:
+# - https://trac.ffmpeg.org/wiki/Encode/H.264
+# - https://trac.ffmpeg.org/wiki/Encode/H.265
+# - …
+[quality]
+# less is better
+crf = 20
+# ffmpeg codec (libx265, libx264 …)
+codec = "libx265"
+# ffmpeg preset. Slower is better (ultrafast,superfast, veryfast, faster, fast, medium, slow, slower, veryslow)
+preset = "veryslow"
+
+[split]
+# ffmpeg cuts the file every 5s for example
+cuttime = 5
+
 [email]
 from = ""
 smtp = ""
 port = ""
 login = ""
 password = ""
+# A list of email separated by comma
 sendTo = [""]

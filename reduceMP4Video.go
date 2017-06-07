@@ -22,7 +22,7 @@ type myinfo struct {
 }
 
 const (
-	inProgessDir   = "InProgess/"
+	inProgessDir   = "InProgress/"
 	beforeMergeDir = "BeforeMerge/"
 	finishedDir    = "Finished/"
 )
@@ -295,7 +295,7 @@ func splitMP4File(filename *string) {
 
 	cutTime := viper.GetInt("split.cuttime")
 
-	cmd := fmt.Sprintf("ffmpeg -i %s -acodec copy -f segment -segment_time %d -vcodec copy -reset_timestamps 1 -map 0 %soutput%%d.mkv", *filename, cutTime, inProgessDir)
+	cmd := fmt.Sprintf("ffmpeg -y -i %s -acodec copy -f segment -segment_time %d -vcodec copy -reset_timestamps 1 -map 0 %soutput%%d.mkv", *filename, cutTime, inProgessDir)
 	exec.Command("/bin/sh", "-c", cmd).CombinedOutput()
 	// os.OpenFile(fmt.Sprintf("InProgress/%s", *filename), os.O_RDONLY|os.O_CREATE, 0666)
 	os.OpenFile(path.Join(inProgessDir, *filename), os.O_RDONLY|os.O_CREATE, 0666)
@@ -312,7 +312,7 @@ func transformToMKV(filename *string) {
 	nice := viper.GetInt("default.nice")
 
 	newFilename := strings.Replace(*filename, inProgessDir, beforeMergeDir, -1)
-	cmd := fmt.Sprintf("nice -n %d ffmpeg -i %s -codec %s -crf %d -preset %s -c:a copy %s", nice, *filename, codec, crf, preset, newFilename)
+	cmd := fmt.Sprintf("nice -n %d ffmpeg -y -i %s -codec %s -crf %d -preset %s -c:a copy %s", nice, *filename, codec, crf, preset, newFilename)
 	// cmd = fmt.Sprintf("nice -n %d ffmpeg -i %s -c:v copy -c:a copy %s", nice, *filename, newFilename)
 	exec.Command("/bin/sh", "-c", cmd).CombinedOutput()
 }

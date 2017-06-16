@@ -111,7 +111,7 @@ func main() {
 				os.Remove(filename)
 			}
 
-			sendAnEmail(fmt.Sprintf("I finish processing %s", (*filesListToMergePtr)[0]), "End of reduce mp4 file")
+			sendAnEmail(fmt.Sprintf("I finish processing %s. There are %d file(s) to reduce", (*filesListPtr)[0], len(*filesListPtr)-1), "End of reduce mp4 file.")
 			continue
 		}
 
